@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { actions, recentValues, useData } from '../store'
 import { daysSince, money, parseAmount, relativeDayLabel, sanitizeAmount, sum, todayISO } from '../utils'
 import { exportBackup } from '../backup'
-import { AmountInput, CategoryPicker, DateChip, EntryRow, SuggestInput, useToast } from '../components/ui'
+import { AmountInput, CategoryPicker, DateChip, EntryRow, MethodPicker, SuggestInput, useToast } from '../components/ui'
 import Icon from '../components/Icon'
 
 const BACKUP_REMIND_DAYS = 7
@@ -15,10 +15,14 @@ export default function AddScreen({ onEdit }) {
   const [note, setNote] = useState('')
   const [place, setPlace] = useState('')
   const [date, setDate] = useState(todayISO)
+  // Most people pay the same way repeatedly, so the last choice sticks
+  const [methodId, setMethodId] = useState(() => data.meta.lastMethodId ?? '')
   const [shake, setShake] = useState(false)
 
   const today = todayISO()
   const cats = useMemo(() => new Map(data.categories.map((c) => [c.id, c])), [data.categories])
+  const methods = useMemo(() => new Map(data.methods.map((m) => [m.id, m])), [data.methods])
+  const activeMethodId = methods.has(methodId) ? methodId : ''
   const notes = useMemo(() => recentValues(data.entries, 'note'), [data.entries])
   const places = useMemo(() => recentValues(data.entries, 'place'), [data.entries])
   const todayTotal = useMemo(() => sum(data.entries.filter((e) => e.date === today)), [data.entries, today])
@@ -58,7 +62,7 @@ export default function AddScreen({ onEdit }) {
   const saveWithCategory = (categoryId) => {
     const value = parseAmount(amount)
     if (!value) return nudge()
-    record({ amount: value, categoryId, note, place })
+    record({ amount: value, categoryId, methodId: activeMethodId, note, place })
   }
 
   // A typed amount overrides the favourite's usual price
@@ -67,6 +71,7 @@ export default function AddScreen({ onEdit }) {
     record({
       amount: value,
       categoryId: cats.has(fav.categoryId) ? fav.categoryId : 'other',
+      methodId: methods.has(fav.methodId) ? fav.methodId : activeMethodId,
       note: note || fav.note,
       place: place || fav.place,
     })
@@ -117,6 +122,14 @@ export default function AddScreen({ onEdit }) {
         <AmountInput inputRef={amountRef} value={amount} onChange={(v) => setAmount(sanitizeAmount(v))} autoFocus shake={shake} />
         <SuggestInput value={note} onChange={setNote} placeholder="โน้ต (ไม่บังคับ)" icon="note" suggestions={notes} />
         <SuggestInput value={place} onChange={setPlace} placeholder="สถานที่ (ไม่บังคับ)" icon="pin" suggestions={places} />
+        <MethodPicker
+          methods={data.methods}
+          selectedId={activeMethodId}
+          onPick={(id) => {
+            setMethodId(id)
+            actions.setMeta({ lastMethodId: id || null })
+          }}
+        />
       </section>
 
       <section className="space-y-3">
@@ -153,7 +166,13 @@ export default function AddScreen({ onEdit }) {
         ) : (
           <div className="divide-y divide-emerald-900/5">
             {dayEntries.map((e) => (
-              <EntryRow key={e.id} entry={e} category={cats.get(e.categoryId)} onClick={() => onEdit(e)} />
+              <EntryRow
+                key={e.id}
+                entry={e}
+                category={cats.get(e.categoryId)}
+                method={methods.get(e.methodId)}
+                onClick={() => onEdit(e)}
+              />
             ))}
           </div>
         )}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { actions, recentValues, useData } from '../store'
 import { fmtDayLong, parseAmount, sanitizeAmount } from '../utils'
-import { AmountInput, CategoryPicker, DateChip, Sheet, SuggestInput, useToast } from './ui'
+import { AmountInput, CategoryPicker, DateChip, MethodPicker, Sheet, SuggestInput, useToast } from './ui'
 import Icon from './Icon'
 
 export default function EntrySheet({ entry, onClose }) {
@@ -30,6 +30,7 @@ export default function EntrySheet({ entry, onClose }) {
     actions.updateEntry(entry.id, {
       amount,
       categoryId: form.categoryId,
+      methodId: form.methodId ?? '',
       date: form.date,
       note: form.note,
       place: form.place,
@@ -47,7 +48,7 @@ export default function EntrySheet({ entry, onClose }) {
   const addFavorite = () => {
     const amount = parseAmount(form.amount)
     if (!amount) return
-    actions.addFavorite({ amount, categoryId: form.categoryId, note: form.note, place: form.place })
+    actions.addFavorite({ amount, categoryId: form.categoryId, methodId: form.methodId, note: form.note, place: form.place })
     toast({ message: '⭐ เพิ่มในรายการโปรดแล้ว จะแสดงที่หน้าบันทึก' })
   }
 
@@ -60,6 +61,7 @@ export default function EntrySheet({ entry, onClose }) {
         <AmountInput value={form.amount} onChange={(v) => set({ amount: sanitizeAmount(v) })} shake={shake} size="md" />
         <SuggestInput value={form.note} onChange={(note) => set({ note })} placeholder="โน้ต เช่น ตีเทนนิส" icon="note" suggestions={notes} />
         <SuggestInput value={form.place} onChange={(place) => set({ place })} placeholder="สถานที่ เช่น สนาม 700 ปี" icon="pin" suggestions={places} />
+        <MethodPicker methods={data.methods} selectedId={form.methodId} onPick={(methodId) => set({ methodId })} />
         <CategoryPicker categories={data.categories} selectedId={form.categoryId} onPick={(categoryId) => set({ categoryId })} compact />
         <button onClick={save} className="w-full rounded-2xl bg-emerald-600 py-3.5 font-semibold text-white active:bg-emerald-700">
           บันทึกการแก้ไข

@@ -4,6 +4,7 @@ import { daysSince, money } from '../utils'
 import { exportBackup, exportCSV, readBackupFile } from '../backup'
 import { Sheet, useToast } from '../components/ui'
 import CategorySheet from '../components/CategorySheet'
+import MethodSheet from '../components/MethodSheet'
 import Icon from '../components/Icon'
 
 export default function SettingsScreen({ onShowGuide }) {
@@ -11,6 +12,7 @@ export default function SettingsScreen({ onShowGuide }) {
   const toast = useToast()
   const fileRef = useRef(null)
   const [editingCat, setEditingCat] = useState(null)
+  const [editingMethod, setEditingMethod] = useState(null)
   const [pendingImport, setPendingImport] = useState(null)
 
   const cats = new Map(data.categories.map((c) => [c.id, c]))
@@ -100,6 +102,32 @@ export default function SettingsScreen({ onShowGuide }) {
         </button>
       </Section>
 
+      <Section title="วิธีจ่าย" icon="wallet">
+        <ul className="divide-y divide-emerald-900/5">
+          {data.methods.map((m, i) => (
+            <li key={m.id} className="flex items-center gap-2 py-1.5">
+              <button onClick={() => setEditingMethod(m)} className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-xl">{m.emoji}</span>
+                <span className="truncate">{m.name}</span>
+              </button>
+              <IconBtn icon="up" label="เลื่อนขึ้น" disabled={i === 0} onClick={() => actions.moveMethod(m.id, -1)} />
+              <IconBtn
+                icon="down"
+                label="เลื่อนลง"
+                disabled={i === data.methods.length - 1}
+                onClick={() => actions.moveMethod(m.id, 1)}
+              />
+            </li>
+          ))}
+        </ul>
+        <button
+          onClick={() => setEditingMethod({})}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-emerald-400 py-2.5 text-sm font-medium text-emerald-700 active:bg-emerald-50"
+        >
+          <Icon name="plus" size={18} /> เพิ่มวิธีจ่าย
+        </button>
+      </Section>
+
       <Section title="รายการโปรด" icon="star">
         {data.favorites.length === 0 ? (
           <p className="py-2 text-sm text-muted">
@@ -139,7 +167,7 @@ export default function SettingsScreen({ onShowGuide }) {
       <Section title="เกี่ยวกับแอป" icon="info">
         <div className="space-y-2 text-sm text-muted">
           <p>
-            <span className="font-semibold text-ink">KaChaiJai</span> · เวอร์ชัน 1.0.0
+            <span className="font-semibold text-ink">KaChaiJai</span> · เวอร์ชัน 1.1.0
           </p>
           <p>ข้อมูลทั้งหมดเก็บอยู่ในเครื่องนี้เท่านั้น ไม่มีการส่งขึ้นเซิร์ฟเวอร์ ไม่มีโฆษณา และไม่เก็บสถิติการใช้งาน</p>
           <p>ถ้าลบแอปออกจากหน้าจอโฮม หรือเปลี่ยนเครื่อง ข้อมูลจะหาย ควรสำรองข้อมูลเป็นระยะ</p>
@@ -154,6 +182,7 @@ export default function SettingsScreen({ onShowGuide }) {
       </button>
 
       <CategorySheet category={editingCat} onClose={() => setEditingCat(null)} />
+      <MethodSheet method={editingMethod} onClose={() => setEditingMethod(null)} />
 
       <Sheet open={!!pendingImport} onClose={() => setPendingImport(null)} title="นำเข้าข้อมูล">
         {pendingImport && (

@@ -10,6 +10,7 @@ export default function ListScreen({ onEdit }) {
   const [query, setQuery] = useState('')
 
   const cats = useMemo(() => new Map(data.categories.map((c) => [c.id, c])), [data.categories])
+  const methods = useMemo(() => new Map(data.methods.map((m) => [m.id, m])), [data.methods])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -69,7 +70,13 @@ export default function ListScreen({ onEdit }) {
             </div>
             <div className="divide-y divide-emerald-900/5">
               {list.map((e) => (
-                <EntryRow key={e.id} entry={e} category={cats.get(e.categoryId)} onClick={() => onEdit(e)} />
+                <EntryRow
+                  key={e.id}
+                  entry={e}
+                  category={cats.get(e.categoryId)}
+                  method={methods.get(e.methodId)}
+                  onClick={() => onEdit(e)}
+                />
               ))}
             </div>
           </section>

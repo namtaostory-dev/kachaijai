@@ -144,6 +144,33 @@ export function CategoryPicker({ categories, selectedId, onPick, compact = false
   )
 }
 
+// Tapping the selected method again clears it (payment method is optional)
+export function MethodPicker({ methods, selectedId, onPick }) {
+  if (!methods.length) return null
+  return (
+    <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1" role="radiogroup" aria-label="วิธีจ่าย">
+      {methods.map((m) => {
+        const active = m.id === selectedId
+        return (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onPick(active ? '' : m.id)}
+            className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-sm transition ${
+              active ? 'bg-emerald-600 font-medium text-white' : 'bg-emerald-50 text-emerald-900 ring-1 ring-emerald-900/10'
+            }`}
+          >
+            <span>{m.emoji}</span>
+            {m.name}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function AmountInput({ value, onChange, inputRef, autoFocus, shake, size = 'lg' }) {
   return (
     <label
@@ -221,7 +248,7 @@ export function PeriodNav({ label, onPrev, onNext, canNext }) {
   )
 }
 
-export function EntryRow({ entry, category, onClick, showDate = false }) {
+export function EntryRow({ entry, category, method, onClick, showDate = false }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 py-2.5 text-left active:opacity-60">
       <span
@@ -233,7 +260,12 @@ export function EntryRow({ entry, category, onClick, showDate = false }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium">{entry.note || category?.name || 'อื่นๆ'}</span>
         <span className="block truncate text-xs text-muted">
-          {[entry.note ? category?.name : null, entry.place && `📍 ${entry.place}`, showDate && fmtDay(entry.date)]
+          {[
+            entry.note ? category?.name : null,
+            method && `${method.emoji} ${method.name}`,
+            entry.place && `📍 ${entry.place}`,
+            showDate && fmtDay(entry.date),
+          ]
             .filter(Boolean)
             .join(' · ')}
         </span>

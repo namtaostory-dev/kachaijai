@@ -45,6 +45,15 @@ export default function SummaryScreen() {
       .sort((a, b) => b.amount - a.amount)
   }, [entries, data.categories])
 
+  const byMethod = useMemo(() => {
+    const totals = new Map()
+    for (const e of entries) totals.set(e.methodId || '', (totals.get(e.methodId || '') || 0) + e.amount)
+    const known = new Map(data.methods.map((m) => [m.id, m]))
+    return [...totals.entries()]
+      .map(([id, amount]) => ({ id, method: known.get(id), amount }))
+      .sort((a, b) => b.amount - a.amount)
+  }, [entries, data.methods])
+
   const byPlace = useMemo(() => {
     const totals = new Map()
     for (const e of entries) {
@@ -133,6 +142,33 @@ export default function SummaryScreen() {
               ))}
             </ul>
           </section>
+
+          {byMethod.some((r) => r.method) && (
+            <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-emerald-900/5">
+              <h2 className="mb-3 font-semibold">แยกตามวิธีจ่าย</h2>
+              <ul className="space-y-3 text-sm">
+                {byMethod.map(({ id, method, amount }) => (
+                  <li key={id || 'none'}>
+                    <div className="mb-1 flex justify-between">
+                      <span className={method ? '' : 'text-muted'}>
+                        {method ? `${method.emoji} ${method.name}` : 'ไม่ระบุ'}
+                      </span>
+                      <span className="font-semibold tabular-nums">
+                        {money(amount)}
+                        <span className="ml-2 text-xs font-normal text-muted">{Math.round((amount / total) * 100)}%</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-emerald-50">
+                      <div
+                        className={`h-full rounded-full ${method ? 'bg-emerald-500' : 'bg-emerald-900/15'}`}
+                        style={{ width: `${(amount / total) * 100}%` }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {bars && (
             <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-emerald-900/5">

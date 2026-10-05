@@ -22,13 +22,23 @@ function defaultCategories() {
   ].map((c) => ({ ...c, updatedAt: now }))
 }
 
+function defaultMethods() {
+  const now = Date.now()
+  return [
+    { id: 'cash', name: 'เงินสด', emoji: '💵' },
+    { id: 'transfer', name: 'โอน/สแกนจ่าย', emoji: '📱' },
+    { id: 'credit', name: 'บัตรเครดิต', emoji: '💳' },
+  ].map((m) => ({ ...m, updatedAt: now }))
+}
+
 function emptyData() {
   return {
     version: SCHEMA_VERSION,
     categories: defaultCategories(),
+    methods: defaultMethods(),
     entries: [],
     favorites: [],
-    meta: { lastBackupAt: null, onboarded: false, backupDismissedAt: null },
+    meta: { lastBackupAt: null, onboarded: false, backupDismissedAt: null, lastMethodId: null },
   }
 }
 
@@ -48,6 +58,10 @@ export function normalize(d) {
   const categories = Array.isArray(d?.categories) && d.categories.length ? d.categories : base.categories
   if (!categories.some((c) => c.id === OTHER_ID)) categories.push(base.categories.find((c) => c.id === OTHER_ID))
   const catIds = new Set(categories.map((c) => c.id))
+  // Files from before payment methods existed get the defaults; an explicitly empty list stays empty
+  const methods = Array.isArray(d?.methods) ? d.methods : base.methods
+  const methodIds = new Set(methods.map((m) => m.id))
+  const validMethod = (id) => (methodIds.has(id) ? id : '')
   const entries = Array.isArray(d?.entries)
     ? d.entries
         .filter((e) => e && e.id && Number.isFinite(e.amount) && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
@@ -56,14 +70,20 @@ export function normalize(d) {
           note: e.note ?? '',
           place: e.place ?? '',
           categoryId: catIds.has(e.categoryId) ? e.categoryId : OTHER_ID,
+          methodId: validMethod(e.methodId),
         }))
     : []
+  const meta = { ...base.meta, ...(d?.meta || {}) }
+  meta.lastMethodId = validMethod(meta.lastMethodId) || null
   return {
     version: SCHEMA_VERSION,
     categories,
+    methods,
     entries,
-    favorites: Array.isArray(d?.favorites) ? d.favorites : [],
-    meta: { ...base.meta, ...(d?.meta || {}) },
+    favorites: Array.isArray(d?.favorites)
+      ? d.favorites.map((f) => ({ ...f, methodId: validMethod(f.methodId) }))
+      : [],
+    meta,
   }
 }
 
@@ -96,12 +116,13 @@ export function useData() {
 export const getPersistError = () => persistError
 
 export const actions = {
-  addEntry({ amount, categoryId, note = '', place = '', date }) {
+  addEntry({ amount, categoryId, methodId = '', note = '', place = '', date }) {
     const now = Date.now()
     const entry = {
       id: uid(),
       amount,
       categoryId,
+      methodId: methodId || '',
       note: note.trim(),
       place: place.trim(),
       date: date || toISODate(),
@@ -169,12 +190,44 @@ export const actions = {
     })
   },
 
-  addFavorite({ amount, categoryId, note = '', place = '' }) {
-    const fav = { id: uid(), amount, categoryId, note: note.trim(), place: place.trim() }
+  addFavorite({ amount, categoryId, methodId = '', note = '', place = '' }) {
+    const fav = { id: uid(), amount, categoryId, methodId: methodId || '', note: note.trim(), place: place.trim() }
     set((s) => ({ ...s, favorites: [...s.favorites, fav] }))
   },
   deleteFavorite(id) {
     set((s) => ({ ...s, favorites: s.favorites.filter((f) => f.id !== id) }))
+  },
+
+  addMethod({ name, emoji }) {
+    const m = { id: uid(), name: name.trim(), emoji, updatedAt: Date.now() }
+    set((s) => ({ ...s, methods: [...s.methods, m] }))
+  },
+  updateMethod(id, patch) {
+    set((s) => ({
+      ...s,
+      methods: s.methods.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: Date.now() } : m)),
+    }))
+  },
+  // Entries paid with a deleted method become "ไม่ระบุ"
+  deleteMethod(id) {
+    const now = Date.now()
+    set((s) => ({
+      ...s,
+      methods: s.methods.filter((m) => m.id !== id),
+      entries: s.entries.map((e) => (e.methodId === id ? { ...e, methodId: '', updatedAt: now } : e)),
+      favorites: s.favorites.map((f) => (f.methodId === id ? { ...f, methodId: '' } : f)),
+      meta: s.meta.lastMethodId === id ? { ...s.meta, lastMethodId: null } : s.meta,
+    }))
+  },
+  moveMethod(id, dir) {
+    set((s) => {
+      const list = [...s.methods]
+      const i = list.findIndex((m) => m.id === id)
+      const j = i + dir
+      if (i < 0 || j < 0 || j >= list.length) return s
+      ;[list[i], list[j]] = [list[j], list[i]]
+      return { ...s, methods: list }
+    })
   },
 
   setMeta(patch) {
@@ -201,11 +254,17 @@ export const actions = {
         const cur = cats.get(c.id)
         if (!cur || (c.updatedAt || 0) > (cur.updatedAt || 0)) cats.set(c.id, c)
       }
+      const methods = new Map(s.methods.map((m) => [m.id, m]))
+      for (const m of incoming.methods) {
+        const cur = methods.get(m.id)
+        if (!cur || (m.updatedAt || 0) > (cur.updatedAt || 0)) methods.set(m.id, m)
+      }
       const favIds = new Set(s.favorites.map((f) => f.id))
       return {
         ...s,
         entries: [...byId.values()],
         categories: [...cats.values()].sort((a, b) => (a.id === OTHER_ID) - (b.id === OTHER_ID)),
+        methods: [...methods.values()],
         favorites: [...s.favorites, ...incoming.favorites.filter((f) => !favIds.has(f.id))],
       }
     })
@@ -226,10 +285,11 @@ export function buildCSV(data) {
     const s = String(v ?? '')
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
-  const rows = [['วันที่', 'หมวดหมู่', 'จำนวนเงิน', 'โน้ต', 'สถานที่']]
+  const methods = new Map(data.methods.map((m) => [m.id, m]))
+  const rows = [['วันที่', 'หมวดหมู่', 'จำนวนเงิน', 'วิธีจ่าย', 'โน้ต', 'สถานที่']]
   const sorted = [...data.entries].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
   for (const e of sorted) {
-    rows.push([e.date, cats.get(e.categoryId)?.name ?? 'อื่นๆ', e.amount, e.note, e.place])
+    rows.push([e.date, cats.get(e.categoryId)?.name ?? 'อื่นๆ', e.amount, methods.get(e.methodId)?.name ?? '', e.note, e.place])
   }
   // BOM so Excel reads Thai correctly
   return '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n')
