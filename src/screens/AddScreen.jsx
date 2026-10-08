@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
-import { actions, recentValues, useData } from '../store'
-import { daysSince, money, parseAmount, relativeDayLabel, sanitizeAmount, sum, todayISO } from '../utils'
+import { actions, currencyOf, hasForeign, recentValues, toBaht, useData } from '../store'
+import { daysSince, fmtNum, money, parseAmount, relativeDayLabel, sanitizeAmount, sum, todayISO } from '../utils'
 import { exportBackup } from '../backup'
-import { AmountInput, CategoryPicker, DateChip, EntryRow, MethodPicker, SuggestInput, useToast } from '../components/ui'
+import { AmountInput, CategoryPicker, DateChip, EntryRow, MethodPicker, SuggestInput, useLookups, useToast } from '../components/ui'
 import Icon from '../components/Icon'
 
 const BACKUP_REMIND_DAYS = 7
@@ -18,11 +18,21 @@ export default function AddScreen({ onEdit }) {
   // Most people pay the same way repeatedly, so the last choice sticks
   const [methodId, setMethodId] = useState(() => data.meta.lastMethodId ?? '')
   const [shake, setShake] = useState(false)
+  // Inside a foreign-currency project, amounts are typed in that currency unless switched to baht
+  const [typeInBaht, setTypeInBaht] = useState(false)
+  const look = useLookups()
 
   const today = todayISO()
   const cats = useMemo(() => new Map(data.categories.map((c) => [c.id, c])), [data.categories])
   const methods = useMemo(() => new Map(data.methods.map((m) => [m.id, m])), [data.methods])
   const activeMethodId = methods.has(methodId) ? methodId : ''
+  const project = data.projects.find((p) => p.id === data.meta.activeProjectId)
+  const inForeign = hasForeign(project) && !typeInBaht
+  const cur = project ? currencyOf(project.currency) : null
+
+  // Turns what was typed into { amount (baht), foreignAmount }
+  const priced = (value) =>
+    inForeign ? { amount: toBaht(value, project.rate), foreignAmount: value } : { amount: value, foreignAmount: null }
   const notes = useMemo(() => recentValues(data.entries, 'note'), [data.entries])
   const places = useMemo(() => recentValues(data.entries, 'place'), [data.entries])
   const todayTotal = useMemo(() => sum(data.entries.filter((e) => e.date === today)), [data.entries, today])
@@ -48,7 +58,7 @@ export default function AddScreen({ onEdit }) {
   }
 
   const record = (fields) => {
-    const entry = actions.addEntry({ ...fields, date })
+    const entry = actions.addEntry({ ...fields, projectId: project?.id ?? '', date })
     setAmount('')
     setNote('')
     setPlace('')
@@ -62,14 +72,14 @@ export default function AddScreen({ onEdit }) {
   const saveWithCategory = (categoryId) => {
     const value = parseAmount(amount)
     if (!value) return nudge()
-    record({ amount: value, categoryId, methodId: activeMethodId, note, place })
+    record({ ...priced(value), categoryId, methodId: activeMethodId, note, place })
   }
 
   // A typed amount overrides the favourite's usual price
   const saveFavorite = (fav) => {
-    const value = parseAmount(amount) ?? fav.amount
+    const typed = parseAmount(amount)
     record({
-      amount: value,
+      ...(typed ? priced(typed) : { amount: fav.amount, foreignAmount: null }),
       categoryId: cats.has(fav.categoryId) ? fav.categoryId : 'other',
       methodId: methods.has(fav.methodId) ? fav.methodId : activeMethodId,
       note: note || fav.note,
@@ -87,6 +97,26 @@ export default function AddScreen({ onEdit }) {
           วันนี้ {money(todayTotal)}
         </span>
       </header>
+
+      {project && (
+        <div className="flex items-center gap-3 rounded-2xl border border-yellow-300 bg-yellow-100 px-3 py-2.5 text-yellow-950">
+          <span className="text-2xl">{project.emoji}</span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block text-xs">กำลังจดใน</span>
+            <span className="block truncate font-semibold">{project.name}</span>
+          </span>
+          <button
+            onClick={() => {
+              actions.setMeta({ activeProjectId: null })
+              setTypeInBaht(false)
+              toast({ message: `ปิดโปรเจกต์ ${project.name} แล้ว กลับไปจดแบบปกติ` })
+            }}
+            className="shrink-0 rounded-full bg-yellow-950 px-3 py-1.5 text-sm font-medium text-yellow-50"
+          >
+            ปิด
+          </button>
+        </div>
+      )}
 
       {backupDue && (
         <div className="flex items-center gap-3 rounded-2xl bg-yellow-100 p-3 text-sm text-yellow-950">
@@ -113,13 +143,34 @@ export default function AddScreen({ onEdit }) {
       <section className="space-y-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-emerald-900/5">
         <div className="flex items-center justify-center gap-2">
           <DateChip value={date} onChange={setDate} label={relativeDayLabel(date)} />
+          {hasForeign(project) && (
+            <button
+              onClick={() => setTypeInBaht((v) => !v)}
+              className="rounded-full border border-emerald-600 px-3 py-1 text-sm font-medium text-emerald-800 active:bg-emerald-50"
+              aria-label="สลับสกุลเงิน"
+            >
+              {inForeign ? `${cur.symbol} ${cur.name}` : '฿ บาท'} ⇄
+            </button>
+          )}
           {isOtherDay && (
             <button onClick={() => setDate(today)} className="text-sm text-emerald-700 underline underline-offset-2">
               กลับไปวันนี้
             </button>
           )}
         </div>
-        <AmountInput inputRef={amountRef} value={amount} onChange={(v) => setAmount(sanitizeAmount(v))} autoFocus shake={shake} />
+        <AmountInput
+          inputRef={amountRef}
+          value={amount}
+          onChange={(v) => setAmount(sanitizeAmount(v))}
+          autoFocus
+          shake={shake}
+          symbol={inForeign ? cur.symbol : '฿'}
+        />
+        {inForeign && (
+          <p className="-mt-2 text-center text-xs text-muted">
+            ≈ {money(toBaht(parseAmount(amount) ?? 0, project.rate))} · 1{cur.symbol} = {fmtNum(project.rate)}฿
+          </p>
+        )}
         <SuggestInput value={note} onChange={setNote} placeholder="โน้ต (ไม่บังคับ)" icon="note" suggestions={notes} />
         <SuggestInput value={place} onChange={setPlace} placeholder="สถานที่ (ไม่บังคับ)" icon="pin" suggestions={places} />
         <MethodPicker
@@ -166,13 +217,7 @@ export default function AddScreen({ onEdit }) {
         ) : (
           <div className="divide-y divide-emerald-900/5">
             {dayEntries.map((e) => (
-              <EntryRow
-                key={e.id}
-                entry={e}
-                category={cats.get(e.categoryId)}
-                method={methods.get(e.methodId)}
-                onClick={() => onEdit(e)}
-              />
+              <EntryRow key={e.id} {...look.rowProps(e)} onClick={() => onEdit(e)} />
             ))}
           </div>
         )}

@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { currencyOf, useData } from '../store'
 import Icon from './Icon'
-import { fmtDay } from '../utils'
+import { fmtDay, fmtNum } from '../utils'
 
 export const ToastContext = createContext(() => {})
 export const useToast = () => useContext(ToastContext)
@@ -145,10 +146,10 @@ export function CategoryPicker({ categories, selectedId, onPick, compact = false
 }
 
 // Tapping the selected method again clears it (payment method is optional)
-export function MethodPicker({ methods, selectedId, onPick }) {
+export function MethodPicker({ methods, selectedId, onPick, label = 'วิธีจ่าย' }) {
   if (!methods.length) return null
   return (
-    <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1" role="radiogroup" aria-label="วิธีจ่าย">
+    <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1" role="radiogroup" aria-label={label}>
       {methods.map((m) => {
         const active = m.id === selectedId
         return (
@@ -171,14 +172,14 @@ export function MethodPicker({ methods, selectedId, onPick }) {
   )
 }
 
-export function AmountInput({ value, onChange, inputRef, autoFocus, shake, size = 'lg' }) {
+export function AmountInput({ value, onChange, inputRef, autoFocus, shake, size = 'lg', symbol = '฿' }) {
   return (
     <label
       className={`flex items-baseline justify-center gap-1 ${shake ? 'shake' : ''} ${
         size === 'lg' ? 'text-5xl' : 'text-4xl'
       } font-semibold tracking-tight`}
     >
-      <span className="text-emerald-600/70">฿</span>
+      <span className="text-emerald-600/70">{symbol}</span>
       <input
         ref={inputRef}
         value={value}
@@ -248,7 +249,7 @@ export function PeriodNav({ label, onPrev, onNext, canNext }) {
   )
 }
 
-export function EntryRow({ entry, category, method, onClick, showDate = false }) {
+export function EntryRow({ entry, category, method, project, currencySymbol, onClick, showDate = false }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 py-2.5 text-left active:opacity-60">
       <span
@@ -262,6 +263,8 @@ export function EntryRow({ entry, category, method, onClick, showDate = false })
         <span className="block truncate text-xs text-muted">
           {[
             entry.note ? category?.name : null,
+            project && `${project.emoji} ${project.name}`,
+            entry.foreignAmount != null && `${currencySymbol ?? ''}${fmtNum(entry.foreignAmount)}`,
             method && `${method.emoji} ${method.name}`,
             entry.place && `📍 ${entry.place}`,
             showDate && fmtDay(entry.date),
@@ -273,4 +276,25 @@ export function EntryRow({ entry, category, method, onClick, showDate = false })
       <span className="shrink-0 font-semibold tabular-nums">{entry.amount.toLocaleString('th-TH')}</span>
     </button>
   )
+}
+
+// Id → object maps shared by every screen that renders entry rows
+export function useLookups() {
+  const data = useData()
+  return useMemo(() => {
+    const cats = new Map(data.categories.map((c) => [c.id, c]))
+    const methods = new Map(data.methods.map((m) => [m.id, m]))
+    const projects = new Map(data.projects.map((p) => [p.id, p]))
+    const rowProps = (e, { hideProject = false } = {}) => {
+      const project = projects.get(e.projectId)
+      return {
+        entry: e,
+        category: cats.get(e.categoryId),
+        method: methods.get(e.methodId),
+        project: hideProject ? undefined : project,
+        currencySymbol: project ? currencyOf(project.currency).symbol : '',
+      }
+    }
+    return { cats, methods, projects, rowProps }
+  }, [data.categories, data.methods, data.projects])
 }

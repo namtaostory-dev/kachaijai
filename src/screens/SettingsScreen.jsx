@@ -167,7 +167,7 @@ export default function SettingsScreen({ onShowGuide }) {
       <Section title="เกี่ยวกับแอป" icon="info">
         <div className="space-y-2 text-sm text-muted">
           <p>
-            <span className="font-semibold text-ink">KaChaiJai</span> · เวอร์ชัน 1.1.0
+            <span className="font-semibold text-ink">KaChaiJai</span> · เวอร์ชัน 1.2.0
           </p>
           <p>ข้อมูลทั้งหมดเก็บอยู่ในเครื่องนี้เท่านั้น ไม่มีการส่งขึ้นเซิร์ฟเวอร์ ไม่มีโฆษณา และไม่เก็บสถิติการใช้งาน</p>
           <p>ถ้าลบแอปออกจากหน้าจอโฮม หรือเปลี่ยนเครื่อง ข้อมูลจะหาย ควรสำรองข้อมูลเป็นระยะ</p>

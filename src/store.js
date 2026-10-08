@@ -22,6 +22,30 @@ function defaultCategories() {
   ].map((c) => ({ ...c, updatedAt: now }))
 }
 
+// Rates are typed in by the user; the app never fetches live exchange rates
+export const CURRENCIES = [
+  { code: 'THB', symbol: '฿', name: 'บาท' },
+  { code: 'CNY', symbol: '¥', name: 'หยวน' },
+  { code: 'JPY', symbol: '¥', name: 'เยน' },
+  { code: 'KRW', symbol: '₩', name: 'วอน' },
+  { code: 'USD', symbol: '$', name: 'ดอลลาร์สหรัฐ' },
+  { code: 'EUR', symbol: '€', name: 'ยูโร' },
+  { code: 'GBP', symbol: '£', name: 'ปอนด์' },
+  { code: 'SGD', symbol: 'S$', name: 'ดอลลาร์สิงคโปร์' },
+  { code: 'HKD', symbol: 'HK$', name: 'ดอลลาร์ฮ่องกง' },
+  { code: 'TWD', symbol: 'NT$', name: 'ดอลลาร์ไต้หวัน' },
+  { code: 'MYR', symbol: 'RM', name: 'ริงกิต' },
+  { code: 'VND', symbol: '₫', name: 'ดอง' },
+  { code: 'LAK', symbol: '₭', name: 'กีบ' },
+  { code: 'AUD', symbol: 'A$', name: 'ดอลลาร์ออสเตรเลีย' },
+]
+export const currencyOf = (code) => CURRENCIES.find((c) => c.code === code) ?? CURRENCIES[0]
+
+// A project has a foreign currency only when it isn't THB and has a usable rate
+export const hasForeign = (project) => !!project && project.currency !== 'THB' && project.rate > 0
+
+const toBaht = (foreign, rate) => Math.round(foreign * rate * 100) / 100
+
 function defaultMethods() {
   const now = Date.now()
   return [
@@ -36,9 +60,10 @@ function emptyData() {
     version: SCHEMA_VERSION,
     categories: defaultCategories(),
     methods: defaultMethods(),
+    projects: [],
     entries: [],
     favorites: [],
-    meta: { lastBackupAt: null, onboarded: false, backupDismissedAt: null, lastMethodId: null },
+    meta: { lastBackupAt: null, onboarded: false, backupDismissedAt: null, lastMethodId: null, activeProjectId: null },
   }
 }
 
@@ -62,6 +87,15 @@ export function normalize(d) {
   const methods = Array.isArray(d?.methods) ? d.methods : base.methods
   const methodIds = new Set(methods.map((m) => m.id))
   const validMethod = (id) => (methodIds.has(id) ? id : '')
+  const projects = Array.isArray(d?.projects)
+    ? d.projects.map((p) => ({
+        currency: 'THB',
+        rate: null,
+        budget: null,
+        ...p,
+      }))
+    : []
+  const projectById = new Map(projects.map((p) => [p.id, p]))
   const entries = Array.isArray(d?.entries)
     ? d.entries
         .filter((e) => e && e.id && Number.isFinite(e.amount) && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
@@ -71,14 +105,19 @@ export function normalize(d) {
           place: e.place ?? '',
           categoryId: catIds.has(e.categoryId) ? e.categoryId : OTHER_ID,
           methodId: validMethod(e.methodId),
+          projectId: projectById.has(e.projectId) ? e.projectId : '',
+          foreignAmount:
+            Number.isFinite(e.foreignAmount) && hasForeign(projectById.get(e.projectId)) ? e.foreignAmount : null,
         }))
     : []
   const meta = { ...base.meta, ...(d?.meta || {}) }
   meta.lastMethodId = validMethod(meta.lastMethodId) || null
+  if (!projectById.has(meta.activeProjectId)) meta.activeProjectId = null
   return {
     version: SCHEMA_VERSION,
     categories,
     methods,
+    projects,
     entries,
     favorites: Array.isArray(d?.favorites)
       ? d.favorites.map((f) => ({ ...f, methodId: validMethod(f.methodId) }))
@@ -116,13 +155,15 @@ export function useData() {
 export const getPersistError = () => persistError
 
 export const actions = {
-  addEntry({ amount, categoryId, methodId = '', note = '', place = '', date }) {
+  addEntry({ amount, categoryId, methodId = '', projectId = '', foreignAmount = null, note = '', place = '', date }) {
     const now = Date.now()
     const entry = {
       id: uid(),
       amount,
       categoryId,
       methodId: methodId || '',
+      projectId: projectId || '',
+      foreignAmount: foreignAmount ?? null,
       note: note.trim(),
       place: place.trim(),
       date: date || toISODate(),
@@ -230,6 +271,39 @@ export const actions = {
     })
   },
 
+  addProject({ name, emoji, currency, rate, budget }) {
+    const now = Date.now()
+    const project = { id: uid(), name: name.trim(), emoji, currency, rate, budget, createdAt: now, updatedAt: now }
+    set((s) => ({ ...s, projects: [...s.projects, project] }))
+    return project
+  },
+  // Changing a project's rate re-prices every entry that was typed in the foreign currency
+  updateProject(id, patch) {
+    const now = Date.now()
+    set((s) => {
+      const projects = s.projects.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: now } : p))
+      const project = projects.find((p) => p.id === id)
+      const foreign = hasForeign(project)
+      const entries = s.entries.map((e) => {
+        if (e.projectId !== id || e.foreignAmount == null) return e
+        if (!foreign) return { ...e, foreignAmount: null, updatedAt: now }
+        const amount = toBaht(e.foreignAmount, project.rate)
+        return amount === e.amount ? e : { ...e, amount, updatedAt: now }
+      })
+      return { ...s, projects, entries }
+    })
+  },
+  // Entries stay; they just lose the project tag
+  deleteProject(id) {
+    const now = Date.now()
+    set((s) => ({
+      ...s,
+      projects: s.projects.filter((p) => p.id !== id),
+      entries: s.entries.map((e) => (e.projectId === id ? { ...e, projectId: '', foreignAmount: null, updatedAt: now } : e)),
+      meta: s.meta.activeProjectId === id ? { ...s.meta, activeProjectId: null } : s.meta,
+    }))
+  },
+
   setMeta(patch) {
     set((s) => ({ ...s, meta: { ...s.meta, ...patch } }))
   },
@@ -259,12 +333,18 @@ export const actions = {
         const cur = methods.get(m.id)
         if (!cur || (m.updatedAt || 0) > (cur.updatedAt || 0)) methods.set(m.id, m)
       }
+      const projects = new Map(s.projects.map((p) => [p.id, p]))
+      for (const p of incoming.projects) {
+        const cur = projects.get(p.id)
+        if (!cur || (p.updatedAt || 0) > (cur.updatedAt || 0)) projects.set(p.id, p)
+      }
       const favIds = new Set(s.favorites.map((f) => f.id))
       return {
         ...s,
         entries: [...byId.values()],
         categories: [...cats.values()].sort((a, b) => (a.id === OTHER_ID) - (b.id === OTHER_ID)),
         methods: [...methods.values()],
+        projects: [...projects.values()],
         favorites: [...s.favorites, ...incoming.favorites.filter((f) => !favIds.has(f.id))],
       }
     })
@@ -275,21 +355,35 @@ export const actions = {
   },
 }
 
+export { toBaht }
+
 export function buildBackup(data) {
   return JSON.stringify({ app: 'KaChaiJai', exportedAt: new Date().toISOString(), ...data }, null, 2)
 }
 
-export function buildCSV(data) {
+export function buildCSV(data, entries = data.entries) {
   const cats = new Map(data.categories.map((c) => [c.id, c]))
   const esc = (v) => {
     const s = String(v ?? '')
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const methods = new Map(data.methods.map((m) => [m.id, m]))
-  const rows = [['วันที่', 'หมวดหมู่', 'จำนวนเงิน', 'วิธีจ่าย', 'โน้ต', 'สถานที่']]
-  const sorted = [...data.entries].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
+  const projects = new Map(data.projects.map((p) => [p.id, p]))
+  const rows = [['วันที่', 'หมวดหมู่', 'จำนวนเงิน (บาท)', 'วิธีจ่าย', 'โน้ต', 'สถานที่', 'โปรเจกต์', 'ยอดสกุลเงินต่างประเทศ', 'สกุลเงิน']]
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
   for (const e of sorted) {
-    rows.push([e.date, cats.get(e.categoryId)?.name ?? 'อื่นๆ', e.amount, methods.get(e.methodId)?.name ?? '', e.note, e.place])
+    const project = projects.get(e.projectId)
+    rows.push([
+      e.date,
+      cats.get(e.categoryId)?.name ?? 'อื่นๆ',
+      e.amount,
+      methods.get(e.methodId)?.name ?? '',
+      e.note,
+      e.place,
+      project?.name ?? '',
+      e.foreignAmount ?? '',
+      e.foreignAmount != null ? project?.currency : '',
+    ])
   }
   // BOM so Excel reads Thai correctly
   return '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n')

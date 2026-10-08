@@ -25,6 +25,7 @@ export function shiftDate(iso, days) {
 
 const moneyFmt = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
 export const money = (n) => `฿${moneyFmt.format(n || 0)}`
+export const fmtNum = (n) => moneyFmt.format(n || 0)
 
 const dayFmt = new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' })
 const dayLongFmt = new Intl.DateTimeFormat('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' })

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { actions, recentValues, useData } from '../store'
-import { fmtDayLong, parseAmount, sanitizeAmount } from '../utils'
+import { actions, currencyOf, hasForeign, recentValues, toBaht, useData } from '../store'
+import { fmtDayLong, fmtNum, money, parseAmount, sanitizeAmount } from '../utils'
 import { AmountInput, CategoryPicker, DateChip, MethodPicker, Sheet, SuggestInput, useToast } from './ui'
 import Icon from './Icon'
 
@@ -11,7 +11,9 @@ export default function EntrySheet({ entry, onClose }) {
   const [shake, setShake] = useState(false)
 
   useEffect(() => {
-    if (entry) setForm({ ...entry, amount: String(entry.amount) })
+    if (!entry) return
+    const inForeign = entry.foreignAmount != null
+    setForm({ ...entry, amount: String(inForeign ? entry.foreignAmount : entry.amount), inForeign })
   }, [entry])
 
   const notes = useMemo(() => recentValues(data.entries, 'note'), [data.entries])
@@ -19,6 +21,9 @@ export default function EntrySheet({ entry, onClose }) {
 
   if (!entry || !form) return null
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
+  const project = data.projects.find((p) => p.id === form.projectId)
+  const foreign = hasForeign(project) && form.inForeign
+  const cur = project ? currencyOf(project.currency) : null
 
   const save = () => {
     const amount = parseAmount(form.amount)
@@ -28,7 +33,9 @@ export default function EntrySheet({ entry, onClose }) {
       return
     }
     actions.updateEntry(entry.id, {
-      amount,
+      amount: foreign ? toBaht(amount, project.rate) : amount,
+      foreignAmount: foreign ? amount : null,
+      projectId: form.projectId || '',
       categoryId: form.categoryId,
       methodId: form.methodId ?? '',
       date: form.date,
@@ -58,10 +65,39 @@ export default function EntrySheet({ entry, onClose }) {
         <div className="flex justify-center">
           <DateChip value={form.date} onChange={(date) => set({ date })} label={fmtDayLong(form.date)} />
         </div>
-        <AmountInput value={form.amount} onChange={(v) => set({ amount: sanitizeAmount(v) })} shake={shake} size="md" />
+        <AmountInput
+          value={form.amount}
+          onChange={(v) => set({ amount: sanitizeAmount(v) })}
+          shake={shake}
+          size="md"
+          symbol={foreign ? cur.symbol : '฿'}
+        />
+        {hasForeign(project) && (
+          <div className="-mt-2 flex items-center justify-center gap-2 text-xs text-muted">
+            {foreign && <span>≈ {money(toBaht(parseAmount(form.amount) ?? 0, project.rate))}</span>}
+            <button
+              onClick={() => set({ inForeign: !form.inForeign })}
+              className="rounded-full border border-emerald-600 px-2.5 py-0.5 font-medium text-emerald-800"
+            >
+              {foreign ? `${cur.symbol} ${cur.name}` : '฿ บาท'} ⇄
+            </button>
+            {foreign && <span>1{cur.symbol} = {fmtNum(project.rate)}฿</span>}
+          </div>
+        )}
         <SuggestInput value={form.note} onChange={(note) => set({ note })} placeholder="โน้ต เช่น ตีเทนนิส" icon="note" suggestions={notes} />
         <SuggestInput value={form.place} onChange={(place) => set({ place })} placeholder="สถานที่ เช่น สนาม 700 ปี" icon="pin" suggestions={places} />
         <MethodPicker methods={data.methods} selectedId={form.methodId} onPick={(methodId) => set({ methodId })} />
+        {data.projects.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-xs text-muted">โปรเจกต์ (แตะซ้ำเพื่อเอาออก)</p>
+            <MethodPicker
+              label="โปรเจกต์"
+              methods={data.projects}
+              selectedId={form.projectId}
+              onPick={(projectId) => set({ projectId })}
+            />
+          </div>
+        )}
         <CategoryPicker categories={data.categories} selectedId={form.categoryId} onPick={(categoryId) => set({ categoryId })} compact />
         <button onClick={save} className="w-full rounded-2xl bg-emerald-600 py-3.5 font-semibold text-white active:bg-emerald-700">
           บันทึกการแก้ไข

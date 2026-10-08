@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../store'
 import { currentPeriodKey, fmtDayLong, fmtMonth, money, shiftPeriod, sum } from '../utils'
-import { EntryRow, PeriodNav, SuggestInput } from '../components/ui'
+import { EntryRow, PeriodNav, SuggestInput, useLookups } from '../components/ui'
 
 export default function ListScreen({ onEdit }) {
   const data = useData()
@@ -9,8 +9,7 @@ export default function ListScreen({ onEdit }) {
   const [catFilter, setCatFilter] = useState(null)
   const [query, setQuery] = useState('')
 
-  const cats = useMemo(() => new Map(data.categories.map((c) => [c.id, c])), [data.categories])
-  const methods = useMemo(() => new Map(data.methods.map((m) => [m.id, m])), [data.methods])
+  const look = useLookups()
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -70,13 +69,7 @@ export default function ListScreen({ onEdit }) {
             </div>
             <div className="divide-y divide-emerald-900/5">
               {list.map((e) => (
-                <EntryRow
-                  key={e.id}
-                  entry={e}
-                  category={cats.get(e.categoryId)}
-                  method={methods.get(e.methodId)}
-                  onClick={() => onEdit(e)}
-                />
+                <EntryRow key={e.id} {...look.rowProps(e)} onClick={() => onEdit(e)} />
               ))}
             </div>
           </section>

@@ -29,9 +29,10 @@ npm run icons      # สร้างไอคอนใหม่จาก public/
   version: 1,
   categories: [{ id, name, emoji, color, updatedAt }],   // "other" ลบไม่ได้
   methods:    [{ id, name, emoji, updatedAt }],          // วิธีจ่าย
-  entries:    [{ id, amount, categoryId, methodId, note, place, date: 'YYYY-MM-DD', createdAt, updatedAt }],
+  projects:   [{ id, name, emoji, currency, rate, budget, createdAt, updatedAt }],
+  entries:    [{ id, amount /* บาทเสมอ */, foreignAmount, categoryId, methodId, projectId, note, place, date: 'YYYY-MM-DD', createdAt, updatedAt }],
   favorites:  [{ id, amount, categoryId, methodId, note, place }],
-  meta:       { lastBackupAt, onboarded, backupDismissedAt, lastMethodId },
+  meta:       { lastBackupAt, onboarded, backupDismissedAt, lastMethodId, activeProjectId, excludeProjects },
 }
 ```
 

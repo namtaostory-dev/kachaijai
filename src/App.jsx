@@ -47,7 +47,7 @@ export default function App() {
         <main ref={scrollRef} className="pt-safe flex-1 overflow-y-auto">
           {tab === 'add' && <AddScreen onEdit={setEditing} />}
           {tab === 'list' && <ListScreen onEdit={setEditing} />}
-          {tab === 'summary' && <SummaryScreen />}
+          {tab === 'summary' && <SummaryScreen onEdit={setEditing} />}
           {tab === 'settings' && <SettingsScreen onShowGuide={() => setGuideOpen(true)} />}
         </main>
 
